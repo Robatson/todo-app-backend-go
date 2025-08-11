@@ -20,12 +20,7 @@ type Todo struct {
 var DB *sql.DB
 
 func initDB() {
-	connStr := "postgresql://todo_app_db_cs8i_user:sxaUqhe89HO3FOKqkAPtB7Yh4WLgSJMT@dpg-d2cu5abuibrs738sjdvg-a.render.com:5432/todo_app_db_cs8i?sslmode=require"
-
-	if connStr == "" {
-		log.Fatal("DATABASE_URL environment variable not set")
-	}
-
+	connStr := "postgres://todo_app_db_cs8i_user:sxaUqhe89HO3FOKqkAPtB7Yh4WLgSJMT@dpg-d2cu5abuibrs738sjdvg-a.render.com:5432/todo_app_db_cs8i?sslmode=require"
 	var err error
 	DB, err = sql.Open("postgres", connStr)
 	if err != nil {
