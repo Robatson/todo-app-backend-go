@@ -25,12 +25,14 @@ func initDB() {
 	var err error
 	DB, err = sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Error opening DB:", err)
 	}
+
 	err = DB.Ping()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Error connecting to DB:", err)
 	}
+
 	fmt.Println("Connected to DB!")
 }
 
@@ -39,19 +41,21 @@ func main() {
 	defer DB.Close()
 
 	http.HandleFunc("/todo", withCORS(todoHandler))
-	log.Println(" Server running at http://localhost:8080")
+
+	log.Println("Server running on port 8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
+// Middleware to add CORS headers and handle OPTIONS preflight requests
 func withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Allow frontend to call backend
+		// Allow requests from your frontend origin; for now, allow all origins
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
-		// Handle preflight requests
-		if r.Method == "OPTIONS" {
+		// Handle preflight request
+		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -68,12 +72,20 @@ func todoHandler(w http.ResponseWriter, r *http.Request) {
 		addTodoHandler(w, r)
 	case http.MethodPut:
 		idStr := r.URL.Query().Get("id")
-		id, _ := strconv.Atoi(idStr)
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			http.Error(w, "Invalid or missing id parameter", http.StatusBadRequest)
+			return
+		}
 		updateTodoHandler(w, r, id)
 	case http.MethodDelete:
 		idStr := r.URL.Query().Get("id")
-		id, _ := strconv.Atoi(idStr)
-		deleteTodoHandler(w, id)
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			http.Error(w, "Invalid or missing id parameter", http.StatusBadRequest)
+			return
+		}
+		deleteTodoHandler(w, r, id)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -87,13 +99,12 @@ func getAllTodosHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	todos := []Todo{}
+	var todos []Todo
 
 	for rows.Next() {
 		var t Todo
-		err := rows.Scan(&t.ID, &t.Title, &t.Completed)
-		if err != nil {
-			http.Error(w, "Error scanning row", http.StatusInternalServerError)
+		if err := rows.Scan(&t.ID, &t.Title, &t.Completed); err != nil {
+			http.Error(w, "Error scanning todos", http.StatusInternalServerError)
 			return
 		}
 		todos = append(todos, t)
@@ -105,13 +116,12 @@ func getAllTodosHandler(w http.ResponseWriter, r *http.Request) {
 
 func addTodoHandler(w http.ResponseWriter, r *http.Request) {
 	var t Todo
-	err := json.NewDecoder(r.Body).Decode(&t)
-	if err != nil {
-		http.Error(w, "Error decoding JSON", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	err = DB.QueryRow("INSERT INTO todos (title, completed) VALUES ($1, $2) RETURNING id", t.Title, t.Completed).Scan(&t.ID)
+	err := DB.QueryRow("INSERT INTO todos (title, completed) VALUES ($1, $2) RETURNING id", t.Title, t.Completed).Scan(&t.ID)
 	if err != nil {
 		http.Error(w, "Error adding todo", http.StatusInternalServerError)
 		return
@@ -123,13 +133,12 @@ func addTodoHandler(w http.ResponseWriter, r *http.Request) {
 
 func updateTodoHandler(w http.ResponseWriter, r *http.Request, id int) {
 	var t Todo
-	err := json.NewDecoder(r.Body).Decode(&t)
-	if err != nil {
-		http.Error(w, "Invalid input", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	_, err = DB.Exec("UPDATE todos SET title=$1, completed=$2 WHERE id=$3", t.Title, t.Completed, id)
+	_, err := DB.Exec("UPDATE todos SET title=$1, completed=$2 WHERE id=$3", t.Title, t.Completed, id)
 	if err != nil {
 		http.Error(w, "Error updating todo", http.StatusInternalServerError)
 		return
@@ -138,7 +147,7 @@ func updateTodoHandler(w http.ResponseWriter, r *http.Request, id int) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func deleteTodoHandler(w http.ResponseWriter, id int) {
+func deleteTodoHandler(w http.ResponseWriter, r *http.Request, id int) {
 	_, err := DB.Exec("DELETE FROM todos WHERE id=$1", id)
 	if err != nil {
 		http.Error(w, "Error deleting todo", http.StatusInternalServerError)
