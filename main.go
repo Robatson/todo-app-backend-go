@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 
 	_ "github.com/lib/pq"
@@ -20,7 +21,11 @@ type Todo struct {
 var DB *sql.DB
 
 func initDB() {
-	connStr := "host=localhost port=5432 user=postgres password=root dbname=todo_app sslmode=disable"
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		log.Fatal("DATABASE_URL environment variable not set")
+	}
+
 	var err error
 	DB, err = sql.Open("postgres", connStr)
 	if err != nil {
@@ -38,7 +43,7 @@ func main() {
 	defer DB.Close()
 
 	http.HandleFunc("/todo", withCORS(todoHandler))
-	log.Println("🚀 Server running at http://localhost:8080")
+	log.Println(" Server running at http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
